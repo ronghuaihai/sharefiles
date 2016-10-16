@@ -1,0 +1,37 @@
+pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "add column accountTelephone int(16) default NULL;" D=test,t=account --no-check-alter  --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none  --execute
+
+
+pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "drop column accountTelephone ;" D=test,t=account --no-check-alter   --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none --execute
+
+
+pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "add index indx_account_name(accountname)" D=test,t=account --no-check-alter   --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none --execute
+
+
+[root@yw-rhh-mha-master ~]#pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "add index indx_account_name(accountname)" D=test,t=account --no-check-alter   --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none --execute
+Operation, tries, wait:
+  copy_rows, 10, 0.25
+  create_triggers, 10, 1
+  drop_triggers, 10, 1
+  swap_tables, 10, 1
+  update_foreign_keys, 10, 1
+No foreign keys reference `test`.`account`; ignoring --alter-foreign-keys-method.
+Altering `test`.`account`...
+Creating new table...
+Created new table test.__account_new OK.
+Altering new table...
+Altered `test`.`__account_new` OK.
+2016-10-16T18:14:36 Creating triggers...
+2016-10-16T18:14:36 Created triggers OK.
+2016-10-16T18:14:36 Copying approximately 9771635 rows...
+Copying `test`.`account`:  22% 01:44 remain
+Copying `test`.`account`:  44% 01:16 remain
+Copying `test`.`account`:  62% 00:52 remain
+Copying `test`.`account`:  83% 00:23 remain
+2016-10-16T18:17:01 Copied rows OK.
+2016-10-16T18:17:01 Swapping tables...
+2016-10-16T18:17:02 Swapped original and new tables OK.
+2016-10-16T18:17:02 Dropping old table...
+2016-10-16T18:17:02 Dropped old table `test`.`_account_old` OK.
+2016-10-16T18:17:02 Dropping triggers...
+2016-10-16T18:17:02 Dropped triggers OK.
+Successfully altered `test`.`account`.
