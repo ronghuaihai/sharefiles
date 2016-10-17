@@ -1,0 +1,148 @@
+﻿root@localhost:mysql.sock  16:22:52 [test]>select count(*) from phapp_pushmessagerecord a
+    -> left join phapp_crm b on b.id = a.crm_id
+    -> where b.phone = '13642492599' and type = '2' and a.isread = '0' and a.del_flag = '0';
++----------+
+| count(*) |
++----------+
+|       56 |
++----------+
+1 row in set (0.13 sec)
+
+root@localhost:mysql.sock  16:23:59 [test]>explain select count(*) from phapp_pushmessagerecord a
+    -> left join phapp_crm b on b.id = a.crm_id
+    -> where b.phone = '13642492599' and type = '2' and a.isread = '0' and a.del_flag = '0'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b
+         type: ref
+possible_keys: PRIMARY,idx_phapp_crm_phone
+          key: idx_phapp_crm_phone
+      key_len: 75
+          ref: const
+         rows: 1
+        Extra: Using where; Using index
+*************************** 2. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: a
+         type: ref
+possible_keys: idx_phapp_pushmessagerecord_crm_id
+          key: idx_phapp_pushmessagerecord_crm_id
+      key_len: 195
+          ref: test.b.id
+         rows: 31
+        Extra: Using where
+2 rows in set (0.01 sec)
+
+root@localhost:mysql.sock  16:24:05 [test]>select count(*) from  phapp_crm;
++----------+
+| count(*) |
++----------+
+|    14722 |
++----------+
+1 row in set (0.30 sec)
+
+root@localhost:mysql.sock  16:24:52 [test]>select count(*) from phapp_pushmessagerecord;
++----------+
+| count(*) |
++----------+
+|   914086 |
++----------+
+1 row in set (0.40 sec)
+
+root@localhost:mysql.sock  16:25:04 [test]>desc phapp_crm;
++--------------+--------------+------+-----+---------+-------+
+| Field        | Type         | Null | Key | Default | Extra |
++--------------+--------------+------+-----+---------+-------+
+| id           | varchar(64)  | NO   | PRI | NULL    |       |
+| phone        | varchar(24)  | YES  | MUL | NULL    |       |
+| name         | varchar(30)  | YES  |     | NULL    |       |
+| org          | varchar(64)  | YES  |     | NULL    |       |
+| wechatqrcode | varchar(255) | YES  |     | NULL    |       |
+| headportrait | varchar(255) | YES  |     | NULL    |       |
+| newphone     | varchar(24)  | YES  |     | NULL    |       |
+| area         | varchar(64)  | YES  |     | NULL    |       |
+| regional     | varchar(64)  | YES  |     | NULL    |       |
+| subcenter    | varchar(64)  | YES  |     | NULL    |       |
+| iconurl      | varchar(255) | YES  |     | NULL    |       |
+| deviceLogo   | char(1)      | YES  |     | NULL    |       |
+| deviceCode   | varchar(64)  | YES  |     | NULL    |       |
+| create_by    | varchar(64)  | YES  |     | NULL    |       |
+| create_date  | datetime     | YES  |     | NULL    |       |
+| update_by    | varchar(64)  | YES  |     | NULL    |       |
+| update_date  | datetime     | YES  |     | NULL    |       |
+| remark       | varchar(255) | YES  |     | NULL    |       |
+| del_flag     | char(1)      | YES  | MUL | NULL    |       |
++--------------+--------------+------+-----+---------+-------+
+19 rows in set (0.09 sec)
+
+root@localhost:mysql.sock  16:26:14 [test]>alter table phapp_pushmessagerecord drop index  idx_phapp_pushmessagerecord_crm_id;
+Query OK, 0 rows affected (0.28 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+root@localhost:mysql.sock  16:27:02 [test]>show create table  phapp_crm\G
+*************************** 1. row ***************************
+       Table: phapp_crm
+Create Table: CREATE TABLE `phapp_crm` (
+  `id` varchar(64) NOT NULL,
+  `phone` varchar(24) DEFAULT NULL COMMENT '手机号码',
+  `name` varchar(30) DEFAULT NULL COMMENT '姓名',
+  `org` varchar(64) DEFAULT NULL COMMENT '组织架构',
+  `wechatqrcode` varchar(255) DEFAULT NULL,
+  `headportrait` varchar(255) DEFAULT NULL,
+  `newphone` varchar(24) DEFAULT NULL COMMENT '新手机号码',
+  `area` varchar(64) DEFAULT NULL COMMENT '片区',
+  `regional` varchar(64) DEFAULT NULL COMMENT '大区',
+  `subcenter` varchar(64) DEFAULT NULL COMMENT '分中心',
+  `iconurl` varchar(255) DEFAULT NULL COMMENT '头像',
+  `deviceLogo` char(1) DEFAULT NULL COMMENT '手机标识',
+  `deviceCode` varchar(64) DEFAULT NULL COMMENT '手机code',
+  `create_by` varchar(64) DEFAULT NULL COMMENT '创建人',
+  `create_date` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_by` varchar(64) DEFAULT NULL COMMENT '更新人',
+  `update_date` datetime DEFAULT NULL COMMENT '更新时间',
+  `remark` varchar(255) DEFAULT NULL COMMENT '备注',
+  `del_flag` char(1) DEFAULT NULL COMMENT '数据字典 del_flag',
+  PRIMARY KEY (`id`),
+  KEY `idx_phapp_crm_phone` (`phone`),
+  KEY `idx_phapp_crm_del_flag` (`del_flag`,`update_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+1 row in set (0.00 sec)
+
+root@localhost:mysql.sock  16:27:45 [test]>alter table phapp_crm drop index idx_phapp_crm_phone;
+Query OK, 0 rows affected (0.04 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+root@localhost:mysql.sock  16:28:39 [test]>explain select count(*) from phapp_pushmessagerecord a left join phapp_crm b on b.id = a.crm_id where b.phone = '13642492599' and type = '2' and a.isread = '0' and a.del_flag = '0'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: a
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 803985
+        Extra: Using where
+*************************** 2. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b
+         type: eq_ref
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 194
+          ref: test.a.crm_id
+         rows: 1
+        Extra: Using where
+2 rows in set (0.00 sec)
+
+root@localhost:mysql.sock  16:28:45 [test]>select count(*) from phapp_pushmessagerecord a left join phapp_crm b on b.id = a.crm_id where b.phone = '13642492599' and type = '2' and a.isread = '0' and a.del_flag = '0';
++----------+
+| count(*) |
++----------+
+|       56 |
++----------+
+1 row in set (3.80 sec)

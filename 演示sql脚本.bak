@@ -4,6 +4,32 @@ pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "a
 pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "drop column accountTelephone ;" D=test,t=account --no-check-alter   --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none --execute
 
 
+
+#索引效率
+##添加索引前
+root@localhost:mysql.sock  18:11:58 [test]>select * from account where accountname ='fan19832';
++-----------+-------------+-------------+
+| accountid | accountname | accounthome |
++-----------+-------------+-------------+
+|     19832 | fan19832    | hebei19832  |
++-----------+-------------+-------------+
+1 row in set (3.58 sec)
+
+root@localhost:mysql.sock  18:13:09 [test]>explain select * from account where accountname ='fan19832'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9771635
+        Extra: Using where
+1 row in set (0.00 sec)
+
+##添加索引
 pt-online-schema-change --user=root --password=root --host=127.0.0.1  --alter "add index indx_account_name(accountname)" D=test,t=account --no-check-alter   --no-check-replication-filters --alter-foreign-keys-method=auto --recursion-method=none --execute
 
 
@@ -35,3 +61,50 @@ Copying `test`.`account`:  83% 00:23 remain
 2016-10-16T18:17:02 Dropping triggers...
 2016-10-16T18:17:02 Dropped triggers OK.
 Successfully altered `test`.`account`.
+
+##加完索引以后
+root@localhost:mysql.sock  18:16:21 [test]>show indexes from account;
++---------+------------+-------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+
+| Table   | Non_unique | Key_name          | Seq_in_index | Column_name | Collation | Cardinality | Sub_part | Packed | Null | Index_type | Comment | Index_comment |
++---------+------------+-------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+
+| account |          0 | PRIMARY           |            1 | accountid   | A         |     9020626 |     NULL | NULL   |      | BTREE      |         |               |
+| account |          1 | indx_account_name |            1 | accountname | A         |     9020626 |     NULL | NULL   | YES  | BTREE      |         |               |
++---------+------------+-------------------+--------------+-------------+-----------+-------------+----------+--------+------+------------+---------+---------------+
+2 rows in set (0.00 sec)
+
+
+
+root@localhost:mysql.sock  18:21:32 [test]>explain select * from account where accountname ='fan19832'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account
+         type: ref
+possible_keys: indx_account_name
+          key: indx_account_name
+      key_len: 28
+          ref: const
+         rows: 1
+        Extra: Using index condition
+1 row in set (0.00 sec)
+
+root@localhost:mysql.sock  18:24:05 [test]>select * from account where accountname ='fan19832';
++-----------+-------------+-------------+
+| accountid | accountname | accounthome |
++-----------+-------------+-------------+
+|     19832 | fan19832    | hebei19832  |
++-----------+-------------+-------------+
+1 row in set (0.00 sec)
+
+
+
+delimiter //
+create procedure initaccount10000()
+begin 
+declare num int; 
+set num=1; 
+while num < 10000 do 
+insert into account10000(accountname,accounthome) values(concat("fan",num), concat("hebei",num)); 
+set num=num+1;
+end while;
+end

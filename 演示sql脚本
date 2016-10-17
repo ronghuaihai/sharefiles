@@ -95,3 +95,99 @@ root@localhost:mysql.sock  18:24:05 [test]>select * from account where accountna
 |     19832 | fan19832    | hebei19832  |
 +-----------+-------------+-------------+
 1 row in set (0.00 sec)
+
+
+
+delimiter //
+create procedure initaccount10000()
+begin 
+declare num int; 
+set num=1; 
+while num < 10000 do 
+insert into account10000(accountname,accounthome) values(concat("fan",num), concat("hebei",num)); 
+set num=num+1;
+end while;
+end
+
+##演示模糊匹配不走索引
+root@localhost:mysql.sock  17:56:59 [test]>explain select * from account10000 where accountname like '%an9999%'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account10000
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 10022
+        Extra: Using where
+1 row in set (0.00 sec)
+
+root@localhost:mysql.sock  17:57:05 [test]> select * from account10000 where accountname like '%an9999%';
++-----------+-------------+-------------+
+| accountid | accountname | accounthome |
++-----------+-------------+-------------+
+|      9999 | fan9999     | hebei9999   |
++-----------+-------------+-------------+
+1 row in set (0.01 sec)
+
+root@localhost:mysql.sock  17:57:14 [test]>explain select * from account10000 where accountname like 'fan9999%'\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account10000
+         type: range
+possible_keys: indx_account_name,ind_accountname
+          key: indx_account_name
+      key_len: 78
+          ref: NULL
+         rows: 1
+        Extra: Using index condition
+1 row in set (0.00 sec)
+
+
+#演示索引列数学运算或者函数不走索引
+root@localhost:mysql.sock  18:07:13 [test]>explain select * from account where accountid-1=1234\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9020626
+        Extra: Using where
+1 row in set (0.00 sec)
+
+root@localhost:mysql.sock  18:07:23 [test]>explain select * from account where accountid=1235\G
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: account
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 4
+          ref: const
+         rows: 1
+        Extra: NULL
+1 row in set (0.00 sec)
+
+root@localhost:mysql.sock  18:07:42 [test]> select * from account where accountid-1=1234;
++-----------+-------------+-------------+
+| accountid | accountname | accounthome |
++-----------+-------------+-------------+
+|      1235 | fan1235     | hebei1235   |
++-----------+-------------+-------------+
+1 row in set (4.06 sec)
+
+root@localhost:mysql.sock  18:08:03 [test]> select * from account where accountid=1235;
++-----------+-------------+-------------+
+| accountid | accountname | accounthome |
++-----------+-------------+-------------+
+|      1235 | fan1235     | hebei1235   |
++-----------+-------------+-------------+
+1 row in set (0.00 sec)
