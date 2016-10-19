@@ -1,0 +1,320 @@
+#要求前期已经搭建完毕一主三从的架构，新的规划MHA的架构如下：
+      IP地址      hostname      解释
+192.168.56.70     master        主库
+192.168.56.71     slave01       第一个从库
+192.168.56.72     slave02       第二个从库
+192.168.56.73     slave03       第三个从库
+192.168.56.101    credit01      binlog-server 和masterha都部署在这台服务器上
+
+#配置master和slave之间的信任关系
+#分别在master一遍一下命令，生成密钥：
+[root@master ~]# ssh-keygen -t dsa -P '' -f /root/.ssh/id_dsa
+[root@master ~]# cat /root/.ssh/id_dsa.pub >> /root/.ssh/authorized_keys
+#slave01,slave02,slave03 binlog-server与masterha所在的服务器102.168.56.101 都执行一遍以下命令
+[root@slave01 ~]# ssh-keygen -t dsa -P '' -f /root/.ssh/id_dsa
+#在master上将其余的所有机器的秘钥拷贝到本地/root/.ssh
+[root@master .ssh]# scp root@192.168.56.71:/root/.ssh/id_dsa.pub   /root/.ssh/id_dsa.pub.71
+[root@master .ssh]# scp root@192.168.56.72:/root/.ssh/id_dsa.pub   /root/.ssh/id_dsa.pub.72
+[root@master .ssh]# scp root@192.168.56.73:/root/.ssh/id_dsa.pub   /root/.ssh/id_dsa.pub.73
+[root@master .ssh]# scp root@192.168.56.101:/root/.ssh/id_dsa.pub   /root/.ssh/id_dsa.pub.101
+#将拷贝过来的公钥放到authorized_keys文件中
+[root@master .ssh]# cat id_dsa.pub.71 >> authorized_keys 
+[root@master .ssh]# cat id_dsa.pub.72 >> authorized_keys 
+[root@master .ssh]# cat id_dsa.pub.73 >> authorized_keys 
+[root@master .ssh]# cat id_dsa.pub.101 >> authorized_keys 
+#将authorized_keys分别拷贝到其余所有机器上
+[root@master .ssh]# scp /root/.ssh/authorized_keys  root@192.168.56.71:/root/.ssh/
+[root@master .ssh]# scp /root/.ssh/authorized_keys  root@192.168.56.72:/root/.ssh/
+[root@master .ssh]# scp /root/.ssh/authorized_keys  root@192.168.56.73:/root/.ssh/
+[root@master .ssh]# scp /root/.ssh/authorized_keys  root@192.168.56.101:/root/.ssh/
+#分别在每台服务器上验证
+[root@master .ssh]# ssh 192.168.56.70 date 
+Fri Mar 18 12:20:03 CST 2016               
+[root@master .ssh]# ssh 192.168.56.71 date 
+Fri Mar 18 12:20:05 CST 2016               
+[root@master .ssh]# ssh 192.168.56.72 date 
+Fri Mar 18 12:20:01 CST 2016               
+[root@master .ssh]# ssh 192.168.56.73 date 
+Fri Mar 18 12:20:05 CST 2016               
+[root@master .ssh]# ssh 192.168.56.101 date
+Fri Mar 18 12:20:07 CST 2016  
+#vi编辑每台服务器的/etc/hosts文件输入以下内容
+192.168.56.70     master   
+192.168.56.71     slave01  
+192.168.56.72     slave02  
+192.168.56.73     slave03  
+192.168.56.101    credit01 
+#每台服务器验证主机名解析
+[root@master .ssh]# ssh master date
+Fri Mar 18 12:50:26 CST 2016
+[root@master .ssh]# ssh slave01 date
+Fri Mar 18 12:50:28 CST 2016
+[root@master .ssh]# ssh slave02 date
+Fri Mar 18 12:50:23 CST 2016
+[root@master .ssh]# ssh slave03 date
+Fri Mar 18 12:50:40 CST 2016
+[root@master .ssh]# ssh credit01 date
+Fri Mar 18 12:50:40 CST 2016
+
+#前期已经搭建完毕master ,slave01，slave02,slave03 一主三从的架构，具体搭建过程详见文档“主从复制搭建”和“主从复制搭建（新增一个备库）”
+#创建用户MHA管理的账号，在所有的mysql服务器上都需要执行：
+GRANT SUPER,RELOAD,REPLICATION CLIENT,SELECT ON *.* TO manager@'192.168.56.%' IDENTIFIED BY 'manager';
+GRANT CREATE,INSERT,UPDATE,DELETE,DROP ON *.* TO manager@'192.168.56.%';
+GRANT SUPER,RELOAD,REPLICATION CLIENT,SELECT ON *.* TO root@'192.168.56.%';
+GRANT CREATE,INSERT,UPDATE,DELETE,DROP ON *.* TO root@'192.168.56.%';
+#创建主从账号，在所有的mysql服务器上都需要执行
+grant RELOAD, SUPER, replication slave on *.* to backup@'%' identified by 'backup';
+
+
+#在master,slave01,slave02,slave03分别安装  mha4mysql-node-0.56.tar.gz ，分别进行如下的操作命令：
+[root@master mysql]# yum -y install perl-DBD-MySQL
+[root@master mysql]# tar -zxvf mha4mysql-node-0.56.tar.gz
+[root@master mysql]# cd  mha4mysql-node-0.56
+[root@master mha4mysql-node-0.56]# perl Makefile.PL
+[root@master mha4mysql-node-0.56]# make
+[root@master mha4mysql-node-0.56]# make install
+
+
+#在管理节点上credit01安装mha
+首先安装perl的mysql包：
+
+
+[root@credit01 ~]# yum install -y perl-DBD-MySQL
+
+
+[root@credit01 ~]# yum install -y perl-Config-Tiny
+
+#发现yum中没有下面的包
+[root@credit01 ~]# yum install -y perl-Log-Dispatch  
+
+#发现yum中没有下面的包
+[root@credit01 ~]# yum install -y perl-Parallel-ForkManager
+
+
+#发现yum中没有下面的包
+[root@credit01 ~]# yum install -y perl-Config-IniFiles
+
+yum中没有的直接下载rpm包
+ wget http://downloads.naulinux.ru/pub/NauLinux/6x/i386/sites/School/RPMS/perl-Log-Dispatch-2.27-1.el6.noarch.rpm
+ wget http://dl.fedoraproject.org/pub/epel/6/i386/perl-Parallel-ForkManager-0.7.9-1.el6.noarch.rpm
+ wget http://mirror.centos.org/centos/6/os/x86_64/Packages/perl-Time-HiRes-1.9721-136.el6.x86_64.rpm
+ wget http://dl.fedoraproject.org/pub/epel/6/i386/perl-Mail-Sendmail-0.79-12.el6.noarch.rpm
+ wget http://dl.fedoraproject.org/pub/epel/6/i386/perl-Mail-Sender-0.8.16-3.el6.noarch.rpm
+ 
+如果上面的wget不满足的话，从下面的链接下载：
+http://rpmfind.net/linux/RPM/mandriva/2011/x86_64/media/contrib/release/perl-Log-Dispatch-2.290.0-1.noarch.html
+http://rpmfind.net/linux/rpm2html/search.php?query=perl-Config-Tiny&submit=Search+...&system=&arch=
+下载atrpms-77-1.noarch.rpm，这个包是安装perl-MIME-Lite-3.01-5.el6.noarch.rpm依赖的包，为了找到这个rpm包，使用了下面的链接，最后的链接成功找到了。
+http://pkgs.org/download/atrpms-perl-module-helper
+或者
+http://smartmediafinderthree.com/2489/download.php?id=2489&name=atrpms%20perl%20module%20helper&sid=spt
+http://osdir.com/ml/redhat.rpm.atrpms.devel/2004-04/msg00004.html
+http://www.rpmfind.net/linux/rpm2html/search.php?query=atrpms-perl-module-helper
+ 
+ 
+[root@credit01 mha_software]# rpm -ivh  perl-Mail-Sendmail-0.79-12.el6.noarch.rpm
+[root@credit01 mha_software]# rpm -ivh perl-Mail-Sender-0.8.16-3.el6.noarch.rpm
+[root@credit01 mha_software]# rpm -ivh  perl-Parallel-ForkManager-0.7.9-1.el6.noarch.rpm
+[root@credit01 mha_software]# rpm -ivh atrpms-77-1.noarch.rpm
+[root@credit01 mha_software]# rpm -ivh perl-MIME-Lite-3.01-5.el6.noarch.rpm
+[root@credit01 mha_software]# rpm -ivh perl-Params-Validate-0.92-3.el6.x86_64.rpm
+[root@credit01 mha_software]# rpm -ivh perl-Log-Dispatch-2.27-1.el6.noarch.rpm
+
+报错出现Can't locate CPAN.pm in @INC
+从此处下载CPAN，http://search.cpan.org/~andk/CPAN-1.9402/lib/CPAN.pm
+tar -xzvf CPAN-1.9402.tar.gz
+cd CPAN-1.9402
+perl Makefile.PL
+make
+make install
+
+ 
+
+[root@credit01 mha_software]# tar -zxvf mha4mysql-node-0.56.tar.gz
+[root@credit01 mha_software]# cd mha4mysql-node-0.56
+[root@credit01 mha4mysql-node-0.56]# perl Makefile.PL
+[root@credit01 mha4mysql-node-0.56]# make
+[root@credit01 mha4mysql-node-0.56]# make install
+
+
+[root@credit01 mha_software]# tar -zxvf mha4mysql-manager-0.56.tar.gz
+[root@credit01 mha_software]# cd mha4mysql-manager-0.56 
+[root@credit01 mha4mysql-manager-0.56]# perl Makefile.PL
+[root@credit01 mha4mysql-manager-0.56]# make
+[root@credit01 mha4mysql-manager-0.56]# make install
+
+
+#管理机credit01配置mha
+#创建目录
+[root@credit01 ~]# mkdir -p /etc/masterha/
+[root@credit01 ~]# mkdir -p /var/log/masterha/app1
+#rz -be上传master_ip_failover   master_ip_online_change 两个脚本到/etc/masterha目录下并授予可执行权限
+[root@credit01 masterha]# chmod 755 master_ip_failover
+[root@credit01 masterha]# chmod 755 master_ip_online_change
+#编辑自动shutdown_script脚本，主要是用来设置在master进行切换时，要执行的脚本动作，这个动作，可以设置把机器关了来防止脑裂，也可以用作一些其他的动作（前提那台机器还活着）
+[root@credit01 masterha]# cd /etc/masterha/
+[root@credit01 masterha]# vi  shutdown_manager.sh
+#!/bin/bash
+#       masterha shutdown_script.
+#       version:        2013-11-06       frist version
+#
+#                               by andy.feng
+#                               copy right
+LANG=C
+for i in $@
+do
+        if  [ ${i:2:2} = "ip" ]
+                then
+                IP=${i:5:20}
+        elif [ ${i:2:7} = "command" ]
+                then
+                CMD=${i:10:20}
+        elif [ ${i:2:4} = "port" ]
+                then
+                MYSQL_PORT=${i:7:20}
+        fi
+done
+USER="manager"
+PASSWORD="manager"
+function stopssh {
+        mysql -s -u$USER -p$PASSWORD -h$IP -P$MYSQL_PORT -e 'select count(*) as c from mysql.user;'  &> /dev/null
+        if [ $? -ne 0 ]
+        then
+                ssh $IP 'killall keepalived'
+                if [ $? != 0 ]
+                        then
+                        echo "$IP killall keepalived fail....."
+                        return 1
+                fi
+                        return 0
+        fi
+}
+
+function stop {
+        mysql -s -u$USER -p$PASSWORD -h$IP -P$MYSQL_PORT -e 'select count(*) as c from mysql.user;'  &> /dev/null
+        if [ $? -ne 0 ]
+        then
+                ssh $IP 'shutdown -h now'
+               if [ $? != 0 ]
+                        then
+                        echo "$IP shutdown  fail....."
+                        return 1
+               fi
+                        return 0
+        fi
+}
+
+if [ $CMD = 'stopssh' ]
+        then
+        stopssh
+fi
+
+#配置完shutdown_manager.sh脚本以后，修改执行权限
+[root@credit01 masterha]# chmod 755 shutdown_manager.sh
+
+#编辑masterha的配置文件,masterha_manager 有两个参数，--global_conf缺省为/etc/masterha_default.cnf  --conf指定被管理的一个集群。global_conf指定的配置文件是通用的，
+#--conf是为一个被管理的集群指定的配置文件。当manager节点管理多个集群时适合--global_conf --conf 两个参数都指定，本次试验master只管理一个，指定--conf文件即可。
+[root@credit01 ~]# vi /etc/masterha/app1.cnf
+
+[server default]
+#mha manager
+user=manager
+password=manager
+manager_workdir = /var/log/masterha/app1
+manager_log = /var/log/masterha/app1/manager.log
+ssh_user = root
+repl_user= backup
+repl_password=backup
+ping_interval=1
+master_ip_failover_script= /etc/masterha/master_ip_failover
+master_ip_online_change_script= /etc/masterha/master_ip_online_change
+shutdown_script=/etc/masterha/shutdown_manager.sh
+
+[server1]
+hostname=192.168.56.70
+master_binlog_dir=/mysql/mysqlinstall/binlog/
+candidate_master=1
+check_repl_delay = 0     
+
+[server2]
+hostname=192.168.56.71
+master_binlog_dir=/mysql/mysqlinstall/binlog/
+candidate_master=1
+check_repl_delay=0
+
+[server3]
+hostname=192.168.56.72
+master_binlog_dir=/mysql/mysqlinstall/binlog/
+#candidate_master=1
+no_master=1
+ignore_fail=1
+
+[server4]
+hostname=192.168.56.73
+master_binlog_dir=/mysql/mysqlinstall/binlog/
+no_master=1
+ignore_fail=1
+
+[binlog1]
+hostname=192.168.56.101
+master_binlog_dir=/u01/binlog
+no_master=1
+ignore_fail=1
+
+
+#配置完上面的内容以后，使用master_check_ssh命令检测ssh是否成功
+[root@credit01 ~]# masterha_check_ssh --conf=/etc/masterha/app1.cnf
+注意：如果上面的命令执行错误Can't locate Time/HiRes.pm in @INC (@INC contains: /u    
+请首先yum install perl* -y 然后参照# perl -MCPAN -e 'install Time::HiRes'   source：http://blog.csdn.net/cityeremite/article/details/4533547  perl -MCPAN -e 'install Log::Dispatch'
+#上面命令输出的结果都是ok，并且最后显示下面的行就算ssh成功
+Fri Mar 18 21:27:40 2016 - [info] All SSH connection tests passed successfully.
+
+#使用mha工具check检查repl环境,输出最后结果如下即OK
+[root@credit01 ~]# masterha_check_repl --conf=/etc/masterha/app1.cnf
+Fri Mar 18 23:19:30 2016 - [info] Slaves settings check done.
+Fri Mar 18 23:19:30 2016 - [info] 
+192.168.56.70(192.168.56.70:3306) (current master)
+ +--192.168.56.71(192.168.56.71:3306)
+ +--192.168.56.72(192.168.56.72:3306)
+ +--192.168.56.73(192.168.56.73:3306)
+
+Fri Mar 18 23:19:30 2016 - [info] Checking replication health on 192.168.56.71..
+Fri Mar 18 23:19:30 2016 - [info]  ok.
+Fri Mar 18 23:19:30 2016 - [info] Checking replication health on 192.168.56.72..
+Fri Mar 18 23:19:30 2016 - [info]  ok.
+Fri Mar 18 23:19:30 2016 - [info] Checking replication health on 192.168.56.73..
+Fri Mar 18 23:19:30 2016 - [info]  ok.
+Fri Mar 18 23:19:30 2016 - [warning] master_ip_failover_script is not defined.
+Fri Mar 18 23:19:30 2016 - [warning] shutdown_script is not defined.
+Fri Mar 18 23:19:30 2016 - [info] Got exit code 0 (Not master dead).
+
+MySQL Replication Health is OK.
+
+
+#启动manager
+[root@credit01 masterha]# mkdir -p /logs/mha/app1/
+[root@credit01 masterha]# nohup masterha_manager --conf=/etc/masterha/app1.cnf < /dev/null >/logs/mha/app1/manager.log 2>&1 &
+[root@credit01 masterha]# tail -f /logs/mha/app1/manager.log
+Sat Mar 19 00:45:02 2016 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Mar 19 00:45:02 2016 - [info] Reading application default configuration from /etc/masterha/app1.cnf..
+Sat Mar 19 00:45:02 2016 - [info] Reading server configuration from /etc/masterha/app1.cnf..
+
+#使用 masterha_check_status命令检测下
+[root@credit01 ~]# masterha_check_status --conf=/etc/masterha/app1.cnf
+app1 (pid:10379) is running(0:PING_OK), master:192.168.56.70
+
+#停止manager
+[root@credit01 ~]# masterha_stop --conf=/etc/masterha/app1.cnf
+Stopped app1 successfully.
+
+
+masterha_master_switch   --conf=/etc/masterha/app1.cnf --master_state=alive --new_master_host=10.150.21.161 --new_master_port=3306  --orig_master_is_new_slave --running_updates_limit=10000
+
+
+
+
+
+
+
+
+             

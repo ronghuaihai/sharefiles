@@ -1,0 +1,50 @@
+主库在my.cnf文件的mysqld下设置
+[mysqld]
+server_id = 1
+log-bin=/mysql/mysqlinstall/binlog/mysql-bin
+log-error=/mysql/mysqlinstall/errlog/logerr.log
+
+登录mysql，在mysql中添加一个backup的账号，并授权给从服务器
+ grant replication slave on *.* to backup@'%' identified by 'backup';
+ grant all on *.* to 'ronghuaihai'@'192.168.56.71' identified by 'ronghuaihai';
+ 
+查询主库状态并记下File和position值
+mysql> show master status;
++------------------+----------+--------------+------------------+-------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++------------------+----------+--------------+------------------+-------------------+
+| mysql-bin.000002 |      332 |              |                  |                   |
++------------------+----------+--------------+------------------+-------------------+
+1 row in set (0.00 sec)
+
+
+
+在从服务器上操作：
+
+1)、确保/etc/my.cnf中有log-bin=mysql-bin和server-id=1参数，并把server-id=1修改为server-id=10。修改之后如下所示：
+mkdir -p /mysql/mysqlinstall/binlog/
+mkdir -p /mysql/mysqlinstall/errlog/
+chown -R mysql:mysql /mysql/mysqlinstall/binlog
+chown -R mysql:mysql /mysql/mysqlinstall/errlog
+
+[mysqld]
+server_id = 10
+log-bin=/mysql/mysqlinstall/binlog/mysql-bin
+log-error=/mysql/mysqlinstall/errlog/logerr.log
+
+
+2）、重启mysql服务。
+
+3）登录mysql，执行如下语句
+
+[root@localhost ~]# mysql -uroot –p123456
+
+mysql> change master to master_host='192.168.56.70',master_user='backup',master_password='backup',master_log_file='mysql-bin.000004',master_log_pos=120;
+
+4)、启动slave同步。
+
+mysql> start slave;
+
+5)、检查主从同步，如果您看到Slave_IO_Running和Slave_SQL_Running均为Yes，则主从复制连接正常。
+
+mysql> show slave status\G

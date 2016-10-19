@@ -1,0 +1,99 @@
+注：主节点mysql85通过vip对外提供服务，切换后vip飘到备用主节点mysql88提供服务，对应用使用透明
+
+原理说明：
+1、 每个keepalived客户端通过vrrp协议进行通信
+2、 以virtual_router_id为组队标识，同为一个vip服务的keepalived的virtual_router_id相同
+3、 以priority 为权值，同一个virtual_router_id下哪个priority大那个就是master,其它为backup
+
+一、安装
+wget http://www.keepalived.org/software/keepalived-1.2.12.tar.gz
+tar -zxvf  keepalived-1.2.12.tar.gz
+cd keepalived-1.2.12
+./configure --prefix=/opt/keepalived
+make
+make install
+
+cp /opt/keepalived/etc/rc.d/init.d/keepalived /etc/rc.d/init.d/
+cp /opt/keepalived/etc/sysconfig/keepalived /etc/sysconfig/
+mkdir /etc/keepalived
+cp /opt/keepalived/etc/keepalived/keepalived.conf /etc/keepalived/
+cp /opt/keepalived/sbin/keepalived /usr/sbin/
+
+--主节点配置文件
+cat /etc/keepalived/keepalived.conf
+! Configuration File for keepalived
+
+global_defs {
+ router_id mysql85 #修改为自己的主机名
+ notification_email {
+ yunwei@zipeiyi.com   #接收邮件，可以有多个，一行一个
+}
+ #当发生切换后，通过邮件通知
+ notification_email_from yunwei@zipeiyi.com
+ #发送邮箱服务器
+ smtp_server mail.zipeiyi.com
+ #发送邮箱超时时间
+ smtp_connect_timeout 30
+ }
+
+vrrp_instance VI_1 {
+     state BACKUP          #都修改成BACKUP，避免出现脑裂
+     interface eth0        #绑定的网卡
+     virtual_router_id 60  #都修改为60
+     priority 100          #优先级，在备用master上修改成80
+     advert_int 1
+     nopreempt             #不抢占资源，意思就是它活了之后也不会再把主抢回来
+   
+     authentication {
+     # 认证方式，可以是PASS或AH两种认证方式
+     auth_type PASS
+     # 认证密码
+     auth_pass 1111
+     }
+virtual_ipaddress {
+     192.168.10.188   #vip
+     }
+}
+
+--备用主配置文件
+cat /etc/keepalived/keepalived.conf
+! Configuration File for keepalived
+
+global_defs {
+ router_id mysql88 #修改为自己的主机名
+ notification_email {
+ yunwei@zipeiyi.com   #接收邮件，可以有多个，一行一个
+}
+ #当发生切换后，通过邮件通知
+ notification_email_from yunwei@zipeiyi.com
+ #发送邮箱服务器
+ smtp_server mail.zipeiyi.com
+ #发送邮箱超时时间
+ smtp_connect_timeout 30
+ }
+
+vrrp_instance VI_1 {
+     state BACKUP          #都修改成BACKUP，避免出现脑裂
+     interface eth0        #绑定的网卡
+     virtual_router_id 60  #都修改为60
+     priority 80           #优先级，在master上修改成100
+     advert_int 1
+     nopreempt             #不抢占资源，意思就是它活了之后也不会再把主抢回来
+   
+     authentication {
+     # 认证方式，可以是PASS或AH两种认证方式
+     auth_type PASS
+     # 认证密码
+     auth_pass 1111
+     }
+virtual_ipaddress {
+     192.168.10.188   #vip
+     }
+}
+
+二、实验
+1 两节点上启动 keepalived
+service keepalived start
+2 在mysql85上 ip a 查看vip 192.168.10.188绑定在eth0上
+3 kill mysql85的keepalived，看vip是否飘到mysql88上
+killall keepalived

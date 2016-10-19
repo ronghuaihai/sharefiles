@@ -1,0 +1,181 @@
+原理说明：
+1、 通过vrrp协议广播，每个keepalived vrrp都去争取master
+2、 以virtual_router_id为组队标识。  同为一个vip服务的keepalived的virtual_router_id相同
+3、 以priority 为权值，同一个virtual_router_id下那个priority大那个就是master,其它为backup
+
+
+
+keepalived下载地址
+http://www.keepalived.org/software/
+
+解压安装
+
+tar -zxvf keepalived-1.2.19.tar.gz
+
+cd keepalived-1.2.19
+
+mkdir -p /usr/local/keepalived
+
+./configure --prefix=/usr/local/keepalived
+
+
+make
+make install
+
+
+下面这几步不是必须的，但是为了方便以后的操作建议做了
+cp /usr/local/keepalived/sbin/keepalived /usr/sbin/
+cp /usr/local/keepalived/etc/sysconfig/keepalived /etc/sysconfig/
+cp /usr/local/keepalived/etc/rc.d/init.d/keepalived /etc/init.d/
+
+为keepalived创建配置文件存放路径
+
+mkdir /etc/keepalived  
+ 
+
+配置主keepalived
+
+
+默认安装是没有配置文件的。新建一个:
+vi /etc/keepalived/keepalived.conf
+
+主keepalived配置文件
+
+global_defs{
+        notification_email{
+                chenyikang@imxiaomai.com
+        }
+        notification_email_from chenyikang@imxiaomai.com
+        smtp_server 127.0.0.1
+        smtp_connect_timeout 30
+        router_id node1
+}
+
+vrrp_sync_groups vg1 {
+    group {
+           v_200
+    }
+}
+vrrp_instance v_200 {
+        state MASTER
+        interface eth0
+        virtual_router_id 51
+        priority 101
+        advert_int 1
+        authentication {
+                auth_type PASS
+                auth_pass 123456
+        }
+        virtual_ipaddress {
+                172.16.101.210
+        }
+}
+
+
+备份keepalived配置文件
+
+global_defs {
+        notification_email {
+                chenyikang@imxiaomai.com
+        }
+        notification_email_from chenyikang@imxiaomai.com
+        smtp_server 127.0.0.1
+        stmp_connect_timeout 30
+        router_id node2
+}
+
+
+vrrp_sync_groups vg1 {
+    group {
+           v_201
+    }
+}
+
+
+vrrp_instance v_201 {
+        state BACKUP
+        interface eth0
+        virtual_router_id 51
+        priority 50
+        advert_int 1
+        authentication {
+                auth_type PASS
+                auth_pass 123456
+        }
+        virtual_ipaddress {
+                172.16.101.210
+        }
+}    
+
+
+
+global_defs： 全局配置标识，表面下面的区域{}是全局配置
+
+notification_email 指定keepalived在发生事情的时候，发送邮件告知，可以有多个地址，每行一个。
+smtp_server 发送email的smtp地址
+smtp_connect_timeout 超时时间
+router_id 运行keepalived的机器的一个标识，通常为hostname，但不一定非得是hostname。故障发生时，邮件通知会用到
+
+
+vrrp_instance和vrrp_sync_group区域
+
+vrrp_instance用来定义对外提供服务的VIP区域及其相关属性。
+
+vrrp_rsync_group用来定义vrrp_intance组，使得这个组内成员动作一致。举个例子来说明一下其功能：
+
+两个vrrp_instance同属于一个vrrp_rsync_group，那么其中一个vrrp_instance发生故障切换时，另一个vrrp_instance也会跟着切换（即使这个instance没有发生故障）。
+
+
+
+notification_email： 里面填邮箱地址，如果keepalived在发生诸如切换操作时会的发邮件到配置上的邮箱，邮件地址可以多个，每行一个
+notification_email_from：表示发送通知邮件时邮件源地址是谁
+smtp_server：表示发送email时使用的smtp服务器地址，可以填127.0.0.1
+smtp_connect_timeout：连接smtp超时时间
+vrrp_instance：各服务器上实例配置域，这里按本服务器的具体情况填值
+state：本实例启动状态，MASTER／SLAVE，不管填MASTER／SLAVE，最终还是要看本机器的权重。
+interface：实例绑定的网卡，因为在配置虚拟IP的时候必须是在已有的网卡上添加的，这里按本机情况而定
+virtual_router_id：这里设置VRID，如果两台机器是同一个备份组，设置一样
+priority：设置本节点的优先级，优先级高的为master，不能超过255
+advert_int：组播信息发送间隔，同一个备份组两个机器设置必须一样，默认是1S
+authentication：验证域，同组的机器auth_type（验证类型）和auth_pass（验证密码）必须一样
+virtual_ipaddress：VIP，为master机器设置的虚拟地址，和实例绑定的网卡（interface）设置到一个网段
+
+
+
+解释：
+state 指定实例初始化的状态，如果都是backup，那么就按照priority的值来确定谁是master。Priority最好相差50
+interface 就是实例绑定的网卡，对外提供服务的网口
+track_interface 设置额外的监控，里面的任意一个网卡出错，都会进入FAULT状态。
+mcast_src_ip 发送多播包的地址，如果不设置，默认使用绑定的网卡的primary IP。
+virtual_router_id  VRID标记（0-255）
+priority 高优先级的为master，最好相差大于50
+advert_int 检查间隔时间，默认1s
+virtual_ipaddress 里面指定VIP，也就是切换到master时，这些IP会被添加，切换到backup时，就删除这些VIP。通过ip addr show 可以看到这些VIP。
+lvs_sync_daemon_interface lvs syncd绑定的网卡，类似发送心跳
+authentication 这一段设置认证
+auth_type 认证方式，支持PASS和HA（据说HA有问题）
+auth_pass 认证密码
+nopreempt 设置不抢占，注意这个设置只能设置在backup状态主机上，而且这个主机的priority必须比另外的主机高
+reempt_delay 抢占延迟，默认5分钟
+
+
+配置好了就可以直接启动了
+
+service keepalived start
+
+
+启动好以后可以用 ip a 命令看虚拟IP的绑定情况,由于172.16.101.200上的权重高，所以VIP绑定到172.16.101.200上面
+
+
+[root@node1 keepalived-1.2.19]# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:0a:51:53 brd ff:ff:ff:ff:ff:ff
+    inet 172.16.101.200/24 brd 172.16.101.255 scope global eth0
+    inet 172.16.101.210/32 scope global eth0
+    inet6 fe80::a00:27ff:fe0a:5153/64 scope link
+       valid_lft forever preferred_lft forever

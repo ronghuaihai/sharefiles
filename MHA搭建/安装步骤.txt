@@ -1,0 +1,140 @@
+下载地址
+https://code.google.com/p/mysql-master-ha/downloads/list?q=label:Featured
+
+wget https://mysql-master-ha.googlecode.com/files/mha4mysql-manager-0.55.tar.gz
+
+wget https://mysql-master-ha.googlecode.com/files/mha4mysql-manager-0.55.tar.gz
+
+安装说明文档
+https://code.google.com/p/mysql-master-ha/wiki/Installation
+
+安装完成之后会产生一些相关工具：
+Manager工具:
+- masterha_check_ssh : 检查MHA的SSH配置。
+- masterha_check_repl : 检查MySQL复制。
+- masterha_manager : 启动MHA。
+- masterha_check_status : 检测当前MHA运行状态。
+- masterha_master_monitor : 监测master是否宕机。
+- masterha_master_switch : 控制故障转移(自动或手动)。
+- masterha_conf_host : 添加或删除配置的server信息。
+
+Node工具:
+- save_binary_logs : 保存和复制master的二进制日志。
+- apply_diff_relay_logs : 识别差异的中继日志事件并应用于其它slave。
+- filter_mysqlbinlog : 去除不必要的ROLLBACK事件(MHA已不再使用这个工具)。
+- purge_relay_logs : 清除中继日志(不会阻塞SQL线程)。
+
+
+安装步骤
+
+mysql配置成主主架构，并且log_slave_updates参数设置为0
+
+从库
+set global read_only=1;
+
+manager安装
+
+安装perl相关工具
+
+yum install gcc
+yum install gcc-c++
+yum install make
+
+
+yum install perl*
+
+yum install cpan
+
+
+tar -zxf mha4mysql-manager-0.55.tar.gz
+
+cd mha4mysql-manager-0.55
+
+perl Makefile.PL
+
+
+make
+
+make install
+
+
+node安装
+
+tar -zxf mha4mysql-node-0.54.tar.gz
+
+cd mha4mysql-node-0.54
+
+perl Makefile.PL
+
+make
+
+make install
+
+
+--------------------------------------------------------------------------
+
+vi /etc/ssh/sshd_config  中的 PermitRootLogin ，设置为YES，再重启SSH。
+
+service sshd restart
+
+
+
+MHA 的配置
+
+Manager上的配置
+
+mkdir -p /usr/local/masterha/app1        #创建数据文件目录
+mkdir /etc/masterha                      #创建配置文件目录
+
+vim /etc/masterha/app1.cnf
+
+[server default]
+user=chenyikang
+password=123456
+manager_workdir=/usr/local/masterha/app1
+manager_log=/usr/local/masterha/app1/manager.log
+remote_workdir=/usr/local/masterha/app1
+ssh_user=root
+repl_user=chenyikang
+repl_password=123456
+shutdown_script=/root/scripts/power_manager.sh
+ping_interval=1
+[server1]
+hostname=172.16.101.200
+port=3306
+master_binlog_dir=/export/servers/data/my3306/binlog
+[server2]
+hostname=172.16.101.201
+port=3306
+master_binlog_dir=/export/servers/data/my3306/binlog
+candidate_master=1
+
+
+masterha_check_ssh 工具验证ssh信任登录是否成功
+
+masterha_check_ssh --conf=/etc/masterha/app1.cnf
+
+
+masterha_check_repl 工具验证mysql复制是否成功
+
+masterha_check_repl --conf=/etc/masterha/app1.cnf
+
+如果出现如下错误
+
+Wed Feb 17 21:39:50 2016 - [error][/usr/local/share/perl5/MHA/Server.pm, ln241]  Getting relay log directory or current relay logfile from replication table failed on 172.16.101.200(172.16.101.200:3306)!
+
+则在my.cnf中进行如下设置
+
+master_info_repository = file
+relay_log_info_repository = file
+
+
+启动manager
+nohup masterha_manager --ignore_last_failover --remove_dead_master_conf --conf=/etc/masterha/app1.cnf > /usr/local/masterha/app1/mha_manager.log 2>&1 &
+
+--remove_dead_master_conf： 该参数代表当发生主从切换后，老的主库将会从配置文件中移除，一般情况下不需要开启
+
+
+停止manager
+masterha_stop --conf=/etc/masterha/app1.cnf
+

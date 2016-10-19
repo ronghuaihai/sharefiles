@@ -1,0 +1,120 @@
+Hi， 两位，
+
+今天接到反馈hr绩效库反应慢，查看数据库后主要有两个慢查询造成：
+
+问题一：
+SELECT
+                a.id AS "id",
+                a.user_id AS "user.id",
+                d.gzyjdf AS "gzyjdf",
+                d.gzbxdf AS "gzbxdf",
+                d.jjfxdf AS "jjfxdf",
+                d.khzdf AS "khzdf",
+                d.zdfdydj AS "zdfdydj",
+                d.djxz AS "djxz",
+                d.zzdj AS "zzdj",
+                d.examiner as "examiner",
+                a.main_id AS "main.id",
+                d.pgzy as "pgzy",
+                u2.name AS "user.name",
+                u2.login_name as "user.loginName",
+                u2.position as "user.position",
+                u2.remarks as "user.remarks",
+                u2.dept1 as "user.dept1",
+                u2.dept2 as "user.dept2",
+                u2.dept3 as "user.dept3",
+                u2.dept4 as "user.dept4",
+                u2.dept5 as "user.dept5",
+                u2.dept6 as "user.dept6",
+                u2.employment_date as "user.employmentDate",
+                o.id as "office.id",
+                o.name as "office.name",
+                o.parent_ids AS "office.parentIds"
+         
+                FROM yx_check_detail a
+                 
+                LEFT JOIN yx_check_main b ON b.id = a.main_id
+                left join YX_CHECK_RESULT d on a.user_id=d.user_id and d.year_check_id = b.year_check_id
+                LEFT JOIN sys_user u2 ON u2.id = a.user_id
+                JOIN sys_office o ON o.id = u2.office_id
+                 order by u2.dept1,u2.dept2,u2.dept3,u2.dept4,u2.dept5,u2.dept6,u2.login_name
+执行计划：
++----+-------------+-------+--------+----------------------------+---------+---------+-------------------+-------+----------------------------------------------------+
+| id | select_type | table | type   | possible_keys              | key     | key_len | ref               | rows  | Extra                                              |
++----+-------------+-------+--------+----------------------------+---------+---------+-------------------+-------+----------------------------------------------------+
+|  1 | SIMPLE      | a     | ALL    | NULL                       | NULL    | NULL    | NULL              | 51876 | Using temporary; Using filesort                    |
+|  1 | SIMPLE      | b     | eq_ref | PRIMARY                    | PRIMARY | 194     | yxaa.a.main_id    |     1 | NULL                                               |
+|  1 | SIMPLE      | u2    | eq_ref | PRIMARY,sys_user_office_id | PRIMARY | 194     | yxaa.a.user_id    |     1 | Using where                                        |
+|  1 | SIMPLE      | o     | eq_ref | PRIMARY                    | PRIMARY | 194     | yxaa.u2.office_id |     1 | NULL                                               |
+|  1 | SIMPLE      | d     | ALL    | NULL                       | NULL    | NULL    | NULL              | 46097 | Using where; Using join buffer (Block Nested Loop) |
++----+-------------+-------+--------+----------------------------+---------+---------+-------------------+-------+----------------------------------------------------+
+5 rows in set (0.00 sec)
+
+优化建议：
+建议增加user_id,main_id的联合索引：alter table yx_check_detail add key idx_uid_mid(user_id, main_id);
+
+问题二：
+select count(1) from (select
+                d.gzyjdf AS "gzyjdf",
+                d.gzbxdf AS "gzbxdf",
+                d.jjfxdf AS "jjfxdf",
+                d.khzdf AS "khzdf",
+                d.zdfdydj AS "zdfdydj",
+                d.djxz AS "djxz",
+                d.zzdj AS "zzdj",
+                d.pgzy as "pgzy",
+                u.examiner as "examiner",
+                u.id AS
+                "user.id",
+                u.name AS "user.name",
+                u.login_name as
+                "user.loginName",
+                u.remarks as "user.remarks",
+                u.position as "user.position",
+                u.dept1 as "user.dept1",
+                u.dept2 as "user.dept2",
+                u.dept3 as "user.dept3",
+                u.dept4 as "user.dept4",
+                u.dept5 as "user.dept5",
+                u.dept6 as "user.dept6",
+                u.employment_date as
+                "user.employmentDate",
+                o.id as "office.id",
+                o.name as "office.name",
+                o.tree_path as "office.treePath",
+                o.parent_ids AS "office.parentIds"
+                from
+                sys_user u
+                JOIN sys_office o ON o.id = u.office_id
+                left join YX_CHECK_RESULT d on
+                u.id=d.user_id and d.year_check_id = u.year_check_id
+                 WHERE u.del_flag = '0'
+
+                                AND u.year_check_id='1d2516734d6e47d28acb1952a3785d2a' 
+                 
+                                order by u.dept1,u.dept2,u.dept3,u.dept4,u.dept5,u.dept6,u.login_name) tmp_count
+执行计划：
++----+-------------+------------+--------+--------------------------------------+-------------------+---------+------------------+------------+---------------------------------------------------------------------+
+| id | select_type | table      | type   | possible_keys                        | key               | key_len | ref              | rows       | Extra                                                               |
++----+-------------+------------+--------+--------------------------------------+-------------------+---------+------------------+------------+---------------------------------------------------------------------+
+|  1 | PRIMARY     | <derived2> | ALL    | NULL                                 | NULL              | NULL    | NULL             | 1073057076 | NULL                                                                |
+|  2 | DERIVED     | u          | ref    | sys_user_office_id,sys_user_del_flag | sys_user_del_flag | 3       | const            |      23076 | Using index condition; Using where; Using temporary; Using filesort |
+|  2 | DERIVED     | o          | eq_ref | PRIMARY                              | PRIMARY           | 194     | yxaa.u.office_id |          1 | NULL                                                                |
+|  2 | DERIVED     | d          | ALL    | NULL                                 | NULL              | NULL    | NULL             |      46501 | Using where; Using join buffer (Block Nested Loop)                  |
++----+-------------+------------+--------+--------------------------------------+-------------------+---------+------------------+------------+---------------------------------------------------------------------+
+4 rows in set (0.00 sec)
+
+优化建议：
+1.	该sql建议增加联合索引：alter table YX_CHECK_RESULT add key idx_oid_dflag_ycid(office_id,del_flag,year_check_id);
+2.	改写sql：去掉外层的count，去掉order by，去掉select 后面跟着的字段，
+改为：select  count(*) from sys_user u
+                JOIN sys_office o ON o.id = u.office_id
+                left join YX_CHECK_RESULT d on
+                u.id=d.user_id and d.year_check_id = u.year_check_id
+                 WHERE u.del_flag = '0'
+                        AND u.year_check_id='1d2516734d6e47d28acb1952a3785d2a' ;
+
+
+
+Br，
+金京  技术部

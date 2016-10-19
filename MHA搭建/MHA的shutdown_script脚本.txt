@@ -1,0 +1,84 @@
+自己编写的
+
+chmod u+x power_manager.sh
+ 
+[root@node1 scripts]# cat power_manager.sh
+
+#!/bin/bash
+#       masterha shutdown_script.
+
+for i in $@
+do
+        if [ `echo $i|awk -F '=' '{print $1}'|cut -c 3-` = 'ip' ]
+                then IP=`echo $i|awk -F '=' '{print $2}'`
+        elif [ `echo $i|awk -F '=' '{print $1}'|cut -c 3-` = 'command' ]
+                then CMD=`echo $i|awk -F '=' '{print $2}'`
+        fi
+done
+
+if [ $CMD = 'stopssh' ]
+        then ssh $IP 'service keepalived stop'
+fi
+
+从网上找的
+#!/bin/bash
+#       masterha shutdown_script.
+#       version:        2013-11-06       frist version
+#
+#                               by andy.feng
+#                               copy right
+LANG=C
+for i in $@
+do
+        if  [ ${i:2:2} = "ip" ]
+                then
+                IP=${i:5:20}
+        elif [ ${i:2:7} = "command" ]
+                then
+                CMD=${i:10:20}
+        elif [ ${i:2:4} = "port" ]
+                then
+                MYSQL_PORT=${i:7:20}
+        fi
+done
+USER="chenyikang"
+PASSWORD="123456"
+function stopssh {
+        mysql -s -u$USER -p$PASSWORD -h$IP -P$MYSQL_PORT -e 'select count(*) as c from mysql.user;'  &> /dev/null
+        if [ $? -ne 0 ]
+        then
+                ssh $IP 'killall keepalived'
+                if [ $? != 0 ]
+                        then
+                        echo "$IP killall keepalived fail....."
+                        return 1
+                fi
+                        return 0
+        fi
+}
+
+function stop {
+        mysql -s -u$USER -p$PASSWORD -h$IP -P$MYSQL_PORT -e 'select count(*) as c from mysql.user;'  &> /dev/null
+        if [ $? -ne 0 ]
+        then
+                ssh $IP 'shutdown -h now'
+               if [ $? != 0 ]
+                        then
+                        echo "$IP shutdown  fail....."
+                        return 1
+               fi
+                        return 0
+        fi
+}
+
+if [ $CMD = 'stopssh' ]
+        then
+        stopssh
+fi
+
+注意：
+需要在配置文件/etc/masterha/app1.cnf中添加如下内容
+shutdown_script=/root/scripts/power_manager.sh
+
+MHA调用该脚本的格式如下
+/root/scripts/power_manager.sh --command=stopssh --ssh_user=root  --host=172.16.101.200  --ip=172.16.101.200  --port=3306

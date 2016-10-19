@@ -1,0 +1,56 @@
+一、模拟应用端连接vip
+1、在其他机器上通过 mysql -h192.168.10.188 -umha -pmha -e "show variables like 'hostname';"
+2、或者通过navicat配置查询
+
+二、mysql85主切换到mysql88备用主
+1、管理节点上开启监控，并查看日志输出，加深原理的理解
+nohup masterha_manager --conf=/etc/mha/app1.cnf  > /var/log/mha/app1/manager.log 2>&1 &
+
+2、停掉mysql85上的mysql，kill进程或service mysqld stop
+
+3、观察步骤1的日志，很快切换完成，且有以下新变化：
+a、mysql88成为新的主
+b、mysql89从新主同步日志
+c、应用端的执行结果指向新主，说明vip已漂移到新主
+
+三、mysql85故障恢复，需要重新切换回来（如果有需要的话），否则作为mysql88的新从库
+1、配置mysql85为新从库
+reset master;
+reset slave;
+
+CHANGE MASTER TO
+MASTER_HOST='192.168.10.88',
+MASTER_USER='rep',
+MASTER_PASSWORD='rep',
+MASTER_PORT=3306,
+MASTER_LOG_FILE='mysql-bin.000001',
+MASTER_LOG_POS=107;
+
+slave start;
+
+2、启动keepalived进程
+service keepalived start
+
+3、管理节点上开启监控，并查看日志输出，加深原理的理解
+nohup masterha_manager --conf=/etc/mha/app1.cnf  > /var/log/mha/app1/manager.log 2>&1 &
+
+4、停掉mysql88上的mysql，kill进程或service mysqld stop
+
+4、观察步骤3的日志，很快切换完成，且有以下新变化：
+a、mysql85成为新的主
+b、mysql89从新主同步日志
+c、应用端的执行结果指向新主，说明vip已漂移到新主
+
+5、有需要的话，mysql88再配置为mysql85的从库
+reset master;
+reset slave;
+
+CHANGE MASTER TO
+MASTER_HOST='192.168.10.85',
+MASTER_USER='rep',
+MASTER_PASSWORD='rep',
+MASTER_PORT=3306,
+MASTER_LOG_FILE='mysql-bin.000001',
+MASTER_LOG_POS=107;
+
+slave start;

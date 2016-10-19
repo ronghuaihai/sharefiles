@@ -1,0 +1,104 @@
+环境：一主两从
+管理节点：192.168.10.85 机器充足，可专门安装在一台机器上
+主：192.168.10.85
+备用主：192.168.10.88
+从：192.168.10.89
+
+一、每个节点/etc/hosts
+192.168.10.85 mysql85
+192.168.10.88 mysql88
+192.168.10.89 mysql89
+
+二、节点ssh等效性
+--每个节点
+ssh-keygen -t rsa
+
+--拷贝到某个节点mysql85
+scp ~/.ssh/id_rsa.pub root@mysql85:~/.ssh/id_rsa.pub.mysql88
+scp ~/.ssh/id_rsa.pub root@mysql85:~/.ssh/id_rsa.pub.mysql89
+
+--mysql85
+cat ~/.ssh/id_rsa.pub* >> ~/.ssh/authorized_keys
+--拷到其他节点
+scp ~/.ssh/authorized_keys root@mysql88:~/.ssh/
+scp ~/.ssh/authorized_keys root@mysql89:~/.ssh/
+
+chmod 600 ~/.ssh/authorized_keys
+--ssh等效性 done
+
+三、安装数据库主从，参考相关文档
+注意从库：
+read_only=1
+relay_log_purge=0
+创建管理节点登录mysql的帐号 mha/test
+
+四、MHA相关软件安装及配置
+--管理节点
+rpm -ivh http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
+yum -y install perl-DBD-MySQL perl-Config-Tiny perl-Log-Dispatch perl-Parallel-ForkManager perl-Time-HiRes
+rpm -ivh mha4mysql-node-0.52-0.noarch.rpm
+rpm -ivh mha4mysql-manager-0.52-0.noarch.rpm
+
+mkdir /etc/mha  
+mkdir -p /var/log/mha/app1  
+cat /etc/mha/app1.cnf  
+[server default]
+shutdown_script=/etc/mha/shutdown_script.sh  --结合keepalived vip的功能，实现切换对应用透明
+manager_log=/var/log/mha/app1/manager.log  
+manager_workdir=/var/log/mha/app1.log  
+user=mha
+password=test  
+ping_interval=2     --ping间隔，用来检测master是否正常
+repl_password=test  --mysql同步帐号
+repl_user=test      --mysql同步帐号密码
+ssh_user=root       --管理节点登录其他节点的ssh用户
+  
+[server1]  
+hostname=192.168.10.85  
+port=3306  
+master_binlog_dir=/usr/local/mysql/data
+candidate_master=1  --master挂掉,优先启用这台作为新master
+  
+[server2]  
+hostname=192.168.10.88  
+port=3306
+master_binlog_dir=/usr/local/mysql/data
+check_repl_delay=0
+candidate_master=1  --master挂掉,优先启用这台作为新master
+
+[server3]
+hostname=192.168.10.89
+port=3306
+master_binlog_dir=/usr/local/mysql/data
+no_master=1 --只作为从库
+
+--管理节点 done
+
+--node节点
+yum -y install perl-DBD-MySQL
+rpm -ivh mha4mysql-node-0.52-0.noarch.rpm
+
+--管理节点、node节点都操作，主要是命令调用问题
+ln -s /usr/lib/perl5/vendor_perl/MHA /usr/lib64/perl5/vendor_perl
+ln -s /usr/local/mysql/bin/mysqlbinlog /usr/bin/mysqlbinlog
+ln -s /usr/local/mysql/bin/mysql /usr/bin/mysql
+ln -s /usr/lib/perl5/vendor_perl/MHA /usr/lib64/perl5/vendor_perl
+
+--管理节点验证 ssh等效性
+masterha_check_ssh --conf=/etc/mha/app1.cnf
+--管理节点验证 mysql主从同步  
+masterha_check_repl --conf=/etc/mha/app1.cnf  
+
+--启动监控 可测试主库故障后自动切换 看log
+nohup masterha_manager --conf=/etc/mha/app1.cnf  > /var/log/mha/app1/manager.log 2>&1 &
+
+--手动切换 3种方式 大致是参数的字面意思
+masterha_master_switch --master_state=alive --conf=/etc/mha/app1.cnf
+
+masterha_master_switch --conf=/etc/mha/app1.cnf --dead_master_host=192.168.10.88 --master_state=dead --new_master_host=192.168.10.89 --ignore_last_failover
+
+masterha_master_switch --conf=/etc/mha/app1.cnf --master_state=alive --new_master_host=192.168.10.85 --orig_master_is_new_slave --running_updates_limit=10000
+
+--有时切换测试 需要清理如下之前切换产生的日志文件
+/var/log/mha/app1.log/app1.failover.error
+/var/log/mha/app1.log/app1.failover.complete 

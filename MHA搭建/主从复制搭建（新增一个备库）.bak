@@ -1,0 +1,25 @@
+从库A入手迁移到从库B：
+A的操作
+mysql> stop slave;
+记下 Relay_Master_Log_file 和 Exec_Master_Log_Pos, 用处和前面一样.
+mysql> show slave status;
+        Relay_Master_Log_File: mysql-bin.000004
+                  Exec_Master_Log_Pos: 882
+                  
+在B从库上执行    
+[root@slave02 ~]# mkdir -p /mysql/mysqlinstall/binlog/
+[root@slave02 ~]# mkdir -p /mysql/mysqlinstall/errlog/
+[root@slave02 ~]# chown -R mysql:mysql /mysql/mysqlinstall/binlog
+[root@slave02 ~]# chown -R mysql:mysql /mysql/mysqlinstall/errlog
+
+
+[mysqld]
+server_id = 11
+log-bin=/mysql/mysqlinstall/binlog/mysql-bin
+log-error=/mysql/mysqlinstall/errlog/logerr.log
+            
+mysql> change master to master_host='192.168.56.70',master_user='backup',master_password='backup',master_log_file='mysql-bin.000004',master_log_pos=882;
+mysql> change master to master_host='10.150.21.162',master_user='backup',master_password='backup',MASTER_AUTO_POSITION = 1;
+                  
+                  
+                  
