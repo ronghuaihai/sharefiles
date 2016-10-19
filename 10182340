@@ -1,0 +1,1 @@
+masterha_master_switch   --conf=/etc/masterha/app1.cnf --master_state=alive --new_master_host=10.150.21.162 --new_master_port=3306  --orig_master_is_new_slave --running_updates_limit=10000
